@@ -29,28 +29,28 @@ async function run() {
     try {
         await client.connect();
         console.log("Connected to MongoDB!");
-        
+
         const db = client.db("carvio")
         carsCollection = db.collection("cars")
         usersCollection = db.collection("users")
         bookingsCollection = db.collection("bookings")
 
         // =============== AUTH ROUTES ===============
-        
+
         // REGISTER
         app.post('/api/auth/register', async (req, res) => {
             try {
                 const { name, email, photoURL, password } = req.body;
-                
+
                 // Check if user exists
                 const existingUser = await usersCollection.findOne({ email });
                 if (existingUser) {
                     return res.status(400).json({ success: false, message: "User already exists" });
                 }
-                
+
                 // Hash password
                 const hashedPassword = await bcrypt.hash(password, 10);
-                
+
                 // Create user
                 const result = await usersCollection.insertOne({
                     name,
@@ -60,9 +60,9 @@ async function run() {
                     role: "user",
                     createdAt: new Date()
                 });
-                
+
                 res.json({ success: true, message: "User registered successfully" });
-                
+
             } catch (error) {
                 console.error("Registration error:", error);
                 res.status(500).json({ success: false, message: "Registration failed" });
@@ -73,30 +73,30 @@ async function run() {
         app.post('/api/auth/login', async (req, res) => {
             try {
                 const { email, password } = req.body;
-                
+
                 // Find user
                 const user = await usersCollection.findOne({ email });
                 if (!user) {
                     return res.status(401).json({ success: false, message: "Invalid email or password" });
                 }
-                
+
                 // Check password
                 const isValidPassword = await bcrypt.compare(password, user.password);
                 if (!isValidPassword) {
                     return res.status(401).json({ success: false, message: "Invalid email or password" });
                 }
-                
-                res.json({ 
-                    success: true, 
+
+                res.json({
+                    success: true,
                     message: "Login successful",
-                    user: { 
-                        id: user._id, 
-                        name: user.name, 
-                        email: user.email, 
-                        photoURL: user.photoURL 
+                    user: {
+                        id: user._id,
+                        name: user.name,
+                        email: user.email,
+                        photoURL: user.photoURL
                     }
                 });
-                
+
             } catch (error) {
                 console.error("Login error:", error);
                 res.status(500).json({ success: false, message: "Login failed" });
@@ -104,7 +104,7 @@ async function run() {
         });
 
         // =============== CAR ROUTES ===============
-        
+
         // GET all cars
         app.get('/explore-cars', async (req, res) => {
             try {
@@ -149,10 +149,11 @@ async function run() {
                 if (!email) {
                     return res.status(400).json({ error: "Email is required" });
                 }
-                
+
                 const myCars = await carsCollection.find({ ownerEmail: email }).toArray()
                 res.json(myCars)
             } catch (error) {
+                console.error("Error fetching my cars:", error);
                 res.status(500).json({ error: "Failed to fetch your cars" })
             }
         })
@@ -166,8 +167,12 @@ async function run() {
                     { _id: new ObjectId(id) },
                     { $set: updateData }
                 )
+                if (result.matchedCount === 0) {
+                    return res.status(404).json({ error: "Car not found" })
+                }
                 res.json({ success: true, message: "Car updated successfully" })
             } catch (error) {
+                console.error("Error updating car:", error);
                 res.status(500).json({ error: "Failed to update car" })
             }
         })
@@ -177,26 +182,36 @@ async function run() {
             try {
                 const id = req.params.id;
                 const result = await carsCollection.deleteOne({ _id: new ObjectId(id) })
+                if (result.deletedCount === 0) {
+                    return res.status(404).json({ error: "Car not found" })
+                }
                 res.json({ success: true, message: "Car deleted successfully" })
             } catch (error) {
+                console.error("Error deleting car:", error);
                 res.status(500).json({ error: "Failed to delete car" })
             }
         })
 
         // =============== BOOKING ROUTES ===============
-        
+
         // POST create booking
         app.post('/api/bookings', async (req, res) => {
             try {
                 const bookingData = req.body
-                const result = await bookingsCollection.insertOne(bookingData)
                 
+                // Add booking date if not present
+                if (!bookingData.bookingDate) {
+                    bookingData.bookingDate = new Date().toISOString()
+                }
+                
+                const result = await bookingsCollection.insertOne(bookingData)
+
                 // Increase booking count for the car
                 await carsCollection.updateOne(
                     { _id: new ObjectId(bookingData.carId) },
                     { $inc: { booking_count: 1 } }
                 )
-                
+
                 res.json({ success: true, message: "Booking confirmed", bookingId: result.insertedId })
             } catch (error) {
                 console.error("Booking error:", error)
@@ -211,16 +226,17 @@ async function run() {
                 if (!email) {
                     return res.status(400).json({ error: "Email is required" });
                 }
-                
+
                 const myBookings = await bookingsCollection.find({ userEmail: email }).toArray()
                 res.json(myBookings)
             } catch (error) {
+                console.error("Error fetching bookings:", error);
                 res.status(500).json({ error: "Failed to fetch bookings" })
             }
         })
 
         console.log("All routes are ready!");
-        
+
     } catch (error) {
         console.error("Database connection failed:", error)
     }
