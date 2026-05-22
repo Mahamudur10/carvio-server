@@ -5,6 +5,8 @@ const dotenv = require('dotenv')
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const bcrypt = require('bcryptjs');
+const { betterAuth } = require("better-auth");
+const { mongodbAdapter } = require("better-auth/adapters/mongodb");
 dotenv.config()
 
 const uri = process.env.MONGODB_URI;
@@ -35,77 +37,42 @@ async function run() {
         usersCollection = db.collection("users")
         bookingsCollection = db.collection("bookings")
 
-        // =============== AUTH ROUTES ===============
-
-        // REGISTER
-        app.post('/api/auth/register', async (req, res) => {
-            try {
-                const { name, email, photoURL, password } = req.body;
-
-                // Check if user exists
-                const existingUser = await usersCollection.findOne({ email });
-                if (existingUser) {
-                    return res.status(400).json({ success: false, message: "User already exists" });
-                }
-
-                // Hash password
-                const hashedPassword = await bcrypt.hash(password, 10);
-
-                // Create user
-                const result = await usersCollection.insertOne({
-                    name,
-                    email,
-                    photoURL,
-                    password: hashedPassword,
-                    role: "user",
-                    createdAt: new Date()
-                });
-
-                res.json({ success: true, message: "User registered successfully" });
-
-            } catch (error) {
-                console.error("Registration error:", error);
-                res.status(500).json({ success: false, message: "Registration failed" });
-            }
+        // =============== BETTER AUTH SETUP ===============
+        const auth = betterAuth({
+            baseURL: process.env.BETTER_AUTH_URL || "http://localhost:5000",
+            secret: process.env.BETTER_AUTH_SECRET || "your-secret-key",
+            
+            database: mongodbAdapter(db),
+            
+            emailAndPassword: {
+                enabled: true,
+                minPasswordLength: 6,
+            },
+            
+            socialProviders: {
+                google: {
+                    clientId: process.env.GOOGLE_CLIENT_ID,
+                    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+                },
+            },
+            
+            trustedOrigins: ["http://localhost:3000"],
+            
+            advanced: {
+                cookiePrefix: "carvio_auth",
+                defaultCookieAttributes: {
+                    sameSite: "lax",
+                    secure: false,
+                    httpOnly: true,
+                },
+            },
         });
 
-        // LOGIN
-        app.post('/api/auth/login', async (req, res) => {
-            try {
-                const { email, password } = req.body;
-
-                // Find user
-                const user = await usersCollection.findOne({ email });
-                if (!user) {
-                    return res.status(401).json({ success: false, message: "Invalid email or password" });
-                }
-
-                // Check password
-                const isValidPassword = await bcrypt.compare(password, user.password);
-                if (!isValidPassword) {
-                    return res.status(401).json({ success: false, message: "Invalid email or password" });
-                }
-
-                res.json({
-                    success: true,
-                    message: "Login successful",
-                    user: {
-                        id: user._id,
-                        name: user.name,
-                        email: user.email,
-                        photoURL: user.photoURL
-                    }
-                });
-
-            } catch (error) {
-                console.error("Login error:", error);
-                res.status(500).json({ success: false, message: "Login failed" });
-            }
-        });
+        // Better Auth handler - 
+        app.use("/api/auth", auth.handler);
 
         // =============== CAR ROUTES ===============
 
-        // GET all cars
         app.get('/explore-cars', async (req, res) => {
             try {
                 const result = await carsCollection.find().toArray()
@@ -115,7 +82,6 @@ async function run() {
             }
         })
 
-        // GET single car by ID
         app.get('/cars/:id', async (req, res) => {
             try {
                 const id = req.params.id;
@@ -129,7 +95,6 @@ async function run() {
             }
         })
 
-        // POST add new car
         app.post('/cars', async (req, res) => {
             try {
                 const carData = req.body
@@ -142,14 +107,12 @@ async function run() {
             }
         })
 
-        // GET my added cars (by owner email)
         app.get('/api/my-cars', async (req, res) => {
             try {
                 const { email } = req.query;
                 if (!email) {
                     return res.status(400).json({ error: "Email is required" });
                 }
-
                 const myCars = await carsCollection.find({ ownerEmail: email }).toArray()
                 res.json(myCars)
             } catch (error) {
@@ -158,7 +121,6 @@ async function run() {
             }
         })
 
-        // UPDATE car
         app.put('/api/cars/:id', async (req, res) => {
             try {
                 const id = req.params.id;
@@ -177,7 +139,6 @@ async function run() {
             }
         })
 
-        // DELETE car
         app.delete('/api/cars/:id', async (req, res) => {
             try {
                 const id = req.params.id;
@@ -194,24 +155,17 @@ async function run() {
 
         // =============== BOOKING ROUTES ===============
 
-        // POST create booking
         app.post('/api/bookings', async (req, res) => {
             try {
                 const bookingData = req.body
-                
-                // Add booking date if not present
                 if (!bookingData.bookingDate) {
                     bookingData.bookingDate = new Date().toISOString()
                 }
-                
                 const result = await bookingsCollection.insertOne(bookingData)
-
-                // Increase booking count for the car
                 await carsCollection.updateOne(
                     { _id: new ObjectId(bookingData.carId) },
                     { $inc: { booking_count: 1 } }
                 )
-
                 res.json({ success: true, message: "Booking confirmed", bookingId: result.insertedId })
             } catch (error) {
                 console.error("Booking error:", error)
@@ -219,14 +173,12 @@ async function run() {
             }
         })
 
-        // GET my bookings (by user email)
         app.get('/api/my-bookings', async (req, res) => {
             try {
                 const { email } = req.query;
                 if (!email) {
                     return res.status(400).json({ error: "Email is required" });
                 }
-
                 const myBookings = await bookingsCollection.find({ userEmail: email }).toArray()
                 res.json(myBookings)
             } catch (error) {
@@ -244,12 +196,10 @@ async function run() {
 
 run().catch(console.dir);
 
-// Root  route
 app.get('/', (req, res) => {
     res.send("Server is running fine!")
 })
 
-// Start server
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`)
 })
