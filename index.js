@@ -13,7 +13,6 @@ const uri = process.env.MONGODB_URI;
 
 const app = express()
 const PORT = process.env.PORT || 5000;
-
 // Middleware
 app.use(cors({
     origin: 'http://localhost:3000',
@@ -37,7 +36,7 @@ async function run() {
         usersCollection = db.collection("users")
         bookingsCollection = db.collection("bookings")
 
-        // =============== BETTER AUTH SETUP ===============
+        // ===============BETTER AUTH SETUP===============
         const auth = betterAuth({
             baseURL: process.env.BETTER_AUTH_URL || "http://localhost:5000",
             secret: process.env.BETTER_AUTH_SECRET || "your-secret-key",
@@ -153,7 +152,7 @@ async function run() {
             }
         })
 
-        // =============== BOOKING ROUTES ===============
+        // ===============BOOKING ROUTES===============
 
         app.post('/api/bookings', async (req, res) => {
             try {
