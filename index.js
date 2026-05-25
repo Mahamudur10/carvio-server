@@ -11,7 +11,7 @@ app.use(cors({
     origin: [
         'http://localhost:3000',
         'https://carvio.vercel.app',
-        'https://carvio-three.vercel.app'  // 👈 এইটা যোগ করো
+        'https://carvio-three.vercel.app'
     ],
     credentials: true
 }));
